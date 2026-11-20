@@ -96,17 +96,45 @@ async def download_tme(url, folder, bot):
 
 async def compress(src, dst, target_mb):
     dur = await duration(src)
-    audio_k = 96
-    video_k = int(target_mb * 8 * 1024 * 0.93 / dur - audio_k)
-    if video_k < 100:
-        raise RuntimeError("Target size is video ke liye bahut chhota hai")
+    total_k = target_mb * 8 * 1024 * 0.93 / dur  # kbit/s for video+audio
+
+    # Audio gets smaller on long/low-bitrate videos
+    if total_k < 250:
+        audio_k, channels = 48, "1"
+    elif total_k < 500:
+        audio_k, channels = 64, "2"
+    else:
+        audio_k, channels = 96, "2"
+
+    video_k = int(total_k - audio_k)
+    if video_k < 30:
+        need = int(dur * (audio_k + 30) / (8 * 1024 * 0.93)) + 1
+        raise RuntimeError(
+            f"Video {dur / 60:.0f} min ka hai, {target_mb} MB bahut chhota hai. "
+            f"Kam se kam {need} MB rakho."
+        )
+
+    # Lower bitrate -> lower resolution and fps so quality stays watchable
+    if video_k >= 800:
+        height, fps = 720, None
+    elif video_k >= 400:
+        height, fps = 480, None
+    elif video_k >= 200:
+        height, fps = 360, 24
+    else:
+        height, fps = 240, 15
+
+    vf = f"scale=-2:'min({height},ih)'"
+    if fps:
+        vf += f",fps={fps}"
+
     await run(
         "ffmpeg", "-y", "-i", src,
-        "-c:v", "libx264", "-preset", "veryfast",
+        "-c:v", "libx264", "-preset", "fast",
         "-b:v", f"{video_k}k", "-maxrate", f"{int(video_k * 1.3)}k",
         "-bufsize", f"{video_k * 2}k",
-        "-vf", "scale='min(1280,iw)':-2",
-        "-c:a", "aac", "-b:a", f"{audio_k}k",
+        "-vf", vf,
+        "-c:a", "aac", "-b:a", f"{audio_k}k", "-ac", channels,
         "-movflags", "+faststart", dst,
     )
 
