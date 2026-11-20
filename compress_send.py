@@ -15,6 +15,7 @@ import tempfile
 
 import yt_dlp
 from pyrogram import Client
+from pyrogram.errors import FloodWait
 
 API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
@@ -153,9 +154,19 @@ async def compress(src, dst, target_mb):
 
 async def main(url, target_mb):
     work = tempfile.mkdtemp()
-    app = Client("job", api_id=API_ID, api_hash=API_HASH,
-                 bot_token=BOT_TOKEN, in_memory=True)
-    await app.start()
+    app = None
+    for _ in range(3):
+        candidate = Client("job", api_id=API_ID, api_hash=API_HASH,
+                           bot_token=BOT_TOKEN, in_memory=True)
+        try:
+            await candidate.start()
+            app = candidate
+            break
+        except FloodWait as e:
+            print(f"Telegram FloodWait {e.value}s - ruk kar dobara try...", flush=True)
+            await asyncio.sleep(e.value + 5)
+    if app is None:
+        raise RuntimeError("Telegram bot login nahi ho paya (FloodWait)")
     try:
         if BOT_RE.match(url):
             src = await download_bot_msg(url, work, app)
