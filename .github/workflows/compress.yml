@@ -1,0 +1,58 @@
+name: Video Compressor
+
+on:
+  workflow_dispatch:
+    inputs:
+      links:
+        description: "Video links (har line me ek link)"
+        required: true
+        type: string
+      size_mb:
+        description: "Target size (MB)"
+        required: true
+        default: "100"
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.split.outputs.matrix }}
+    steps:
+      - id: split
+        env:
+          LINKS: ${{ inputs.links }}
+        run: |
+          MATRIX=$(printf '%s' "$LINKS" | tr -d '\r' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  compress:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        url: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install pyrogram tgcrypto yt-dlp
+
+      - name: Compress and send
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          URL: ${{ matrix.url }}
+          SIZE_MB: ${{ inputs.size_mb }}
+        run: python compress_send.py "$URL" "$SIZE_MB"
