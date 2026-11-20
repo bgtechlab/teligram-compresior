@@ -23,6 +23,18 @@ CHAT_ID = int(os.environ["CHAT_ID"])
 SESSION_STRING = os.environ.get("SESSION_STRING", "").strip()
 
 TME_RE = re.compile(r"https?://t\.me/(?:c/(\d+)|([A-Za-z0-9_]+))/(?:\d+/)?(\d+)")
+BOT_RE = re.compile(r"^bot:(-?\d+):(\d+)$")  # video sent/forwarded to the bot chat
+
+
+async def download_bot_msg(spec, folder, bot):
+    m = BOT_RE.match(spec)
+    msg = await bot.get_messages(int(m.group(1)), int(m.group(2)))
+    if not msg or msg.empty or not (msg.video or msg.document):
+        raise RuntimeError("Bot chat me video nahi mila")
+    path = await bot.download_media(msg, file_name=f"{folder}/in.mp4")
+    if not path:
+        raise RuntimeError("Video download nahi hua")
+    return path
 
 
 async def run(*cmd):
@@ -145,7 +157,9 @@ async def main(url, target_mb):
                  bot_token=BOT_TOKEN, in_memory=True)
     await app.start()
     try:
-        if TME_RE.match(url):
+        if BOT_RE.match(url):
+            src = await download_bot_msg(url, work, app)
+        elif TME_RE.match(url):
             src = await download_tme(url, work, app)
         else:
             src = await asyncio.to_thread(download_web, url, work)
@@ -153,7 +167,8 @@ async def main(url, target_mb):
         await compress(src, dst, target_mb)
         size = os.path.getsize(dst) / 1024 / 1024
         await app.send_video(CHAT_ID, dst, supports_streaming=True,
-                             caption=f"✅ {size:.0f} MB\n{url}")
+                             caption=f"✅ {size:.0f} MB"
+                             + ("" if BOT_RE.match(url) else f"\n{url}"))
     except Exception as e:
         await app.send_message(CHAT_ID, f"❌ Fail: {url}\n{e}")
         raise
