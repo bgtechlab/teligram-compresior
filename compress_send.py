@@ -144,6 +144,7 @@ async def compress(src, dst, target_mb):
     await run(
         "ffmpeg", "-y", "-i", src,
         "-c:v", "libx264", "-preset", "fast",
+        "-pix_fmt", "yuv420p", "-profile:v", "high",
         "-b:v", f"{video_k}k", "-maxrate", f"{int(video_k * 1.3)}k",
         "-bufsize", f"{video_k * 2}k",
         "-vf", vf,
